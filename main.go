@@ -3,8 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 )
 
 type Response struct {
@@ -53,9 +57,45 @@ func invokeHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func uploadFunction(w http.ResponseWriter, r *http.Request) {
+	err := r.ParseMultipartForm(10 << 20)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	file, fileHanlder, err := r.FormFile("file")
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
+
+	defer file.Close()
+
+	filename := fileHanlder.Filename
+
+	dstPath := "./functions/" + filename
+
+	dst, err := os.Create(dstPath)
+
+	if err != nil {
+		http.Error(w, "Error saving file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer dst.Close()
+
+	io.Copy(dst, file)
+
+	name := strings.TrimSuffix(filename, filepath.Ext(filename))
+	functions[name] = dstPath
+
+	fmt.Fprintf(w, "Uploaded and registered function %s at %s\n", name, dstPath)
+}
+
 func main() {
 
 	http.HandleFunc("/invoke", invokeHandler)
+	http.HandleFunc("/upload", uploadFunction)
 	fmt.Println("Mini Lambda listening on :8080")
 	http.ListenAndServe(":8080", nil)
 }
